@@ -32,6 +32,13 @@ import {
 
 import { Widget } from './widget';
 
+import menuStyle from '../style/menu.css';
+// TODO: importing styles here removes them from document (which is fine for menu.css);
+// we either need to modify // webpack loader to be context-dependent or re-attach to
+// `document.head` manually.
+// import widgetStyle from '../style/widget.css';
+
+
 interface IWindowData {
   pageXOffset: number;
   pageYOffset: number;
@@ -54,6 +61,7 @@ export class Menu extends Widget {
     this.setFlag(Widget.Flag.DisallowLayout);
     this.commands = options.commands;
     this.renderer = options.renderer || Menu.defaultRenderer;
+    this._host = Private.getOrCreateHost();
   }
 
   /**
@@ -459,7 +467,7 @@ export class Menu extends Widget {
     let forceY = options.forceY || false;
 
     // Open the menu as a root menu.
-    Private.openRootMenu(this, x, y, forceX, forceY);
+    Private.openRootMenu(this, x, y, forceX, forceY, this._host);
 
     // Activate the menu to accept keyboard input.
     this.activate();
@@ -851,7 +859,7 @@ export class Menu extends Widget {
     let itemNode = this.contentNode.children[this._activeIndex];
 
     // Open the submenu at the active node.
-    Private.openSubmenu(submenu, itemNode as HTMLElement);
+    Private.openSubmenu(submenu, itemNode as HTMLElement, this._host);
 
     // Activate the first item if desired.
     if (activateFirst) {
@@ -940,6 +948,7 @@ export class Menu extends Widget {
   private _parentMenu: Menu | null = null;
   private _aboutToClose = new Signal<this, void>(this);
   private _menuRequested = new Signal<this, 'next' | 'previous'>(this);
+  private _host: HTMLElement | ShadowRoot;
 }
 
 /**
@@ -1421,6 +1430,34 @@ namespace Private {
     transientCacheCounter++;
   }
 
+  let menuHost: ShadowRoot | null = null;
+
+  /**
+   * Get or create a shared host for menu elements.
+   */
+  export function getOrCreateHost(): ShadowRoot {
+    if (menuHost) {
+      return menuHost;
+    } else {
+      const anchor = document.createElement('div');
+      // anchor.style.contain = 'style size';
+      document.body.appendChild(anchor);
+      // return anchor;
+      const shadow = anchor.attachShadow({ mode: 'open' });
+      menuHost = shadow;
+      for (const styleText of [menuStyle]) {
+        addShadowStyle(styleText);
+      }
+      return menuHost;
+    }
+  }
+
+  export function addShadowStyle(text: string) {
+    const style = document.createElement('style');
+    style.textContent = text;
+    menuHost!.appendChild(style);
+  }
+
   /**
    * Create the DOM node for a menu.
    */
@@ -1537,7 +1574,8 @@ namespace Private {
     x: number,
     y: number,
     forceX: boolean,
-    forceY: boolean
+    forceY: boolean,
+    host: HTMLElement | ShadowRoot
   ): void {
     // Get the current position and size of the main viewport.
     const windowData = getWindowData();
@@ -1561,7 +1599,7 @@ namespace Private {
     style.maxHeight = `${maxHeight}px`;
 
     // Attach the menu to the document.
-    Widget.attach(menu, document.body);
+    Widget.attach(menu, host as HTMLElement);
 
     // Measure the size of the menu.
     let { width, height } = node.getBoundingClientRect();
@@ -1590,7 +1628,12 @@ namespace Private {
   /**
    * Open a menu as a submenu using an item node for positioning.
    */
-  export function openSubmenu(submenu: Menu, itemNode: HTMLElement): void {
+  export function openSubmenu(
+    submenu: Menu,
+    itemNode: HTMLElement,
+    host: HTMLElement | ShadowRoot
+  ): void {
+
     // Get the current position and size of the main viewport.
     const windowData = getWindowData();
     let px = windowData.pageXOffset;
@@ -1613,7 +1656,7 @@ namespace Private {
     style.maxHeight = `${maxHeight}px`;
 
     // Attach the menu to the document.
-    Widget.attach(submenu, document.body);
+    Widget.attach(submenu, host as HTMLElement);
 
     // Measure the size of the menu.
     let { width, height } = node.getBoundingClientRect();
